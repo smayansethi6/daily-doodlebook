@@ -3,11 +3,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Check, Send } from "lucide-react";
+import { submitResponse } from "@/lib/questions";
+import { persistLocalResponse } from "@/lib/localResponses";
 
 interface QuestionCardProps {
+  questionId: string;
   question: string;
   category: string;
-  issue: string;
   index: number;
 }
 
@@ -20,25 +22,46 @@ const ACCENTS = [
   "border-l-ochre",
 ];
 
-export default function QuestionCard({ question, category, issue, index }: QuestionCardProps) {
+export default function QuestionCard({ questionId, question, category, index }: QuestionCardProps) {
   const [open, setOpen] = useState(false);
   const [answer, setAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const rotation = ROTATIONS[index % ROTATIONS.length];
   const accentClass = ACCENTS[index % ACCENTS.length];
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!answer.trim()) return;
-    const key = `answer-${new Date().toDateString()}-${index}`;
-    localStorage.setItem(key, answer);
-    setSubmitted(true);
+    setIsSaving(true);
+    setSaveError("");
+
+    try {
+      const trimmed = answer.trim();
+      const record = await submitResponse(questionId, category, trimmed);
+      persistLocalResponse({
+        id: record.id,
+        createdAt: record.created_at ?? new Date().toISOString(),
+        questionId,
+        category,
+        question,
+        response: trimmed,
+      });
+      setSubmitted(true);
+      setAnswer("");
+    } catch (error) {
+      console.error("Failed to save response", error);
+      setSaveError("Unable to save response. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <>
       <button
-        onClick={() => { setOpen(true); setSubmitted(false); setAnswer(""); }}
+        onClick={() => { setOpen(true); setSubmitted(false); setAnswer(""); setSaveError(""); }}
         className={`group relative w-full text-left border-l-4 ${accentClass} bg-card p-6 md:p-8 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer animate-float-in`}
         style={{
           animationDelay: `${index * 120}ms`,
@@ -48,9 +71,6 @@ export default function QuestionCard({ question, category, issue, index }: Quest
         <div className="flex items-start justify-between mb-4">
           <span className="text-mono text-xs tracking-widest uppercase text-muted-foreground">
             {category}
-          </span>
-          <span className="text-mono text-[10px] text-muted-foreground opacity-60">
-            {issue}
           </span>
         </div>
         <h3 className="text-editorial text-lg md:text-xl lg:text-2xl font-bold leading-snug text-foreground group-hover:text-primary transition-colors">
@@ -87,13 +107,16 @@ export default function QuestionCard({ question, category, issue, index }: Quest
                 </span>
                 <Button
                   onClick={handleSubmit}
-                  disabled={!answer.trim()}
+                  disabled={!answer.trim() || isSaving}
                   className="bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground font-mono text-xs tracking-wider uppercase gap-2"
                 >
                   <Send className="w-3 h-3" />
                   Submit Entry
                 </Button>
               </div>
+              {saveError && (
+                <p className="text-[10px] text-destructive mt-2">{saveError}</p>
+              )}
             </div>
           ) : (
             <div className="flex flex-col items-center py-8 gap-4 animate-stamp">
