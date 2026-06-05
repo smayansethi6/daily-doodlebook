@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -9,6 +9,7 @@ import {
   updateQuestion,
 } from "@/lib/admin";
 import { clearAdminSession, getAdminSession } from "@/lib/adminSession";
+import { toast } from "@/components/ui/sonner";
 import {
   Bar,
   BarChart,
@@ -58,12 +59,21 @@ const AdminDashboard = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingQuestion, setEditingQuestion] = useState("");
   const [editingCategory, setEditingCategory] = useState("");
+  const [isSavingQuestion, setIsSavingQuestion] = useState(false);
+  const editingPanelRef = useRef<HTMLDivElement | null>(null);
   const [responseFilter, setResponseFilter] = useState({
     category: "",
     search: "",
     from: "",
     to: "",
   });
+
+  useEffect(() => {
+    if (!editingId) return;
+    requestAnimationFrame(() => {
+      editingPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [editingId]);
 
   const questionsQuery = useQuery({
     queryKey: ["admin-questions"],
@@ -109,25 +119,68 @@ const AdminDashboard = () => {
   };
 
   const handleAddQuestion = async () => {
-    if (!newQuestion.trim() || !newCategory.trim()) return;
-    await createQuestion(newQuestion.trim(), newCategory.trim());
-    setNewQuestion("");
-    setNewCategory("");
-    questionsQuery.refetch();
+    const question = newQuestion.trim();
+    const category = newCategory.trim();
+    if (!question || !category) {
+      toast.error("Please enter both a question and a category.");
+      return;
+    }
+
+    try {
+      setIsSavingQuestion(true);
+      await createQuestion(question, category);
+      setNewQuestion("");
+      setNewCategory("");
+      await questionsQuery.refetch();
+      toast.success("Question created.");
+    } catch (error) {
+      toast.error("Unable to create question.", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setIsSavingQuestion(false);
+    }
   };
 
   const handleUpdateQuestion = async () => {
     if (!editingId) return;
-    await updateQuestion(editingId, editingQuestion.trim(), editingCategory.trim());
-    setEditingId(null);
-    setEditingQuestion("");
-    setEditingCategory("");
-    questionsQuery.refetch();
+    const question = editingQuestion.trim();
+    const category = editingCategory.trim();
+    if (!question || !category) {
+      toast.error("Question and category cannot be empty.");
+      return;
+    }
+
+    try {
+      setIsSavingQuestion(true);
+      await updateQuestion(editingId, question, category);
+      setEditingId(null);
+      setEditingQuestion("");
+      setEditingCategory("");
+      await questionsQuery.refetch();
+      toast.success("Question updated.");
+    } catch (error) {
+      toast.error("Unable to update question.", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setIsSavingQuestion(false);
+    }
   };
 
   const handleDeleteQuestion = async (id: string) => {
-    await deleteQuestion(id);
-    questionsQuery.refetch();
+    try {
+      setIsSavingQuestion(true);
+      await deleteQuestion(id);
+      await questionsQuery.refetch();
+      toast.success("Question deleted.");
+    } catch (error) {
+      toast.error("Unable to delete question.", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setIsSavingQuestion(false);
+    }
   };
 
   return (
@@ -142,6 +195,7 @@ const AdminDashboard = () => {
           </div>
           <button
             onClick={handleLogout}
+            type="button"
             className="inline-flex h-12 w-32 items-center justify-center rounded-none border border-foreground/40 bg-card text-[10px] uppercase tracking-[0.4em] text-muted-foreground hover:bg-foreground/5 transition"
           >
             Sign out
@@ -153,6 +207,7 @@ const AdminDashboard = () => {
         <nav className="space-y-3 rounded-none border border-border bg-card p-4 text-sm">
           <button
             onClick={() => setActiveTab("questions")}
+            type="button"
             className={`w-full rounded-none border border-transparent px-3 py-2 text-left font-editorial tracking-tight ${
               activeTab === "questions" ? "border-foreground/30 bg-foreground/5" : ""
             }`}
@@ -161,6 +216,7 @@ const AdminDashboard = () => {
           </button>
           <button
             onClick={() => setActiveTab("responses")}
+            type="button"
             className={`w-full rounded-none border border-transparent px-3 py-2 text-left font-editorial tracking-tight ${
               activeTab === "responses" ? "border-foreground/30 bg-foreground/5" : ""
             }`}
@@ -189,6 +245,8 @@ const AdminDashboard = () => {
                   />
                   <button
                     onClick={handleAddQuestion}
+                    type="button"
+                    disabled={isSavingQuestion}
                     className="rounded-none border border-foreground/40 bg-card px-4 py-2 text-xs tracking-tight text-muted-foreground hover:bg-foreground/5"
                   >
                     Save
@@ -216,23 +274,34 @@ const AdminDashboard = () => {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           onClick={() => {
-                            setEditingId(questionItem.id);
+                            const id = String(questionItem.id);
+                            if (editingId === id) {
+                              setEditingId(null);
+                              setEditingQuestion("");
+                              setEditingCategory("");
+                              return;
+                            }
+                            setEditingId(id);
                             setEditingQuestion(questionItem.question);
                             setEditingCategory(questionItem.category);
                           }}
+                          type="button"
+                          disabled={isSavingQuestion}
                           className="rounded-none border border-foreground/40 px-3 py-1 text-[10px] tracking-tight text-muted-foreground"
                         >
-                          Edit
+                          {editingId === String(questionItem.id) ? "Editing…" : "Edit"}
                         </button>
-                    <button
-                      onClick={() => {
-                        if (!confirm("Delete this question? This cannot be undone.")) return;
-                        handleDeleteQuestion(questionItem.id);
-                      }}
-                      className="rounded-none border border-destructive px-3 py-1 text-[10px] tracking-tight text-destructive"
-                    >
-                      Delete
-                    </button>
+                        <button
+                          onClick={() => {
+                            if (!confirm("Delete this question? This cannot be undone.")) return;
+                            handleDeleteQuestion(String(questionItem.id));
+                          }}
+                          type="button"
+                          disabled={isSavingQuestion}
+                          className="rounded-none border border-destructive px-3 py-1 text-[10px] tracking-tight text-destructive"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -240,7 +309,7 @@ const AdminDashboard = () => {
               </div>
 
               {editingId && (
-                <div className="rounded-none border border-border px-4 py-3">
+                <div ref={editingPanelRef} className="rounded-none border border-border px-4 py-3">
                   <p className="text-sm tracking-tight text-muted-foreground">Editing</p>
                   <div className="mt-3 flex flex-col gap-3 md:flex-row">
                     <input
@@ -255,13 +324,17 @@ const AdminDashboard = () => {
                     />
                     <button
                       onClick={handleUpdateQuestion}
-                    className="rounded-none border border-foreground/40 bg-card px-4 py-2 text-xs tracking-tight text-muted-foreground hover:bg-foreground/5"
+                      type="button"
+                      disabled={isSavingQuestion}
+                      className="rounded-none border border-foreground/40 bg-card px-4 py-2 text-xs tracking-tight text-muted-foreground hover:bg-foreground/5 disabled:opacity-60"
                     >
                       Save changes
                     </button>
                     <button
                       onClick={() => setEditingId(null)}
-                    className="rounded-none border border-muted px-4 py-2 text-xs tracking-tight text-muted-foreground hover:bg-foreground/5"
+                      type="button"
+                      disabled={isSavingQuestion}
+                      className="rounded-none border border-muted px-4 py-2 text-xs tracking-tight text-muted-foreground hover:bg-foreground/5 disabled:opacity-60"
                     >
                       Cancel
                     </button>
