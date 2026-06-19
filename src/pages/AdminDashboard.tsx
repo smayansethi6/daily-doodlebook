@@ -2,8 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
+  addQuestionSchedule,
   createQuestion,
   deleteQuestion,
+  deleteQuestionSchedule,
+  fetchQuestionSchedules,
   fetchQuestions,
   fetchResponses,
   updateQuestion,
@@ -53,9 +56,11 @@ const PieTooltip = ({ active, payload }: TooltipProps<number, string>) => {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"questions" | "responses">("questions");
+  const [activeTab, setActiveTab] = useState<"questions" | "schedule" | "responses">("questions");
   const [newQuestion, setNewQuestion] = useState("");
   const [newCategory, setNewCategory] = useState("");
+  const [scheduleQuestionId, setScheduleQuestionId] = useState("");
+  const [scheduleDate, setScheduleDate] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingQuestion, setEditingQuestion] = useState("");
   const [editingCategory, setEditingCategory] = useState("");
@@ -79,6 +84,24 @@ const AdminDashboard = () => {
     queryKey: ["admin-questions"],
     queryFn: fetchQuestions,
   });
+
+  const schedulesQuery = useQuery({
+    queryKey: ["admin-question-schedules"],
+    queryFn: fetchQuestionSchedules,
+  });
+
+  const schedulesByQuestionId = useMemo(() => {
+    const map = new Map<string, { id: string; scheduled_date: string }[]>();
+    (schedulesQuery.data ?? []).forEach((schedule) => {
+      const existing = map.get(schedule.question_id) ?? [];
+      existing.push({
+        id: schedule.id,
+        scheduled_date: schedule.scheduled_date,
+      });
+      map.set(schedule.question_id, existing);
+    });
+    return map;
+  }, [schedulesQuery.data]);
 
   const responsesQuery = useQuery({
     queryKey: [
@@ -173,9 +196,44 @@ const AdminDashboard = () => {
       setIsSavingQuestion(true);
       await deleteQuestion(id);
       await questionsQuery.refetch();
+      await schedulesQuery.refetch();
       toast.success("Question deleted.");
     } catch (error) {
       toast.error("Unable to delete question.", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setIsSavingQuestion(false);
+    }
+  };
+
+  const handleAddSchedule = async (questionId: string, date: string) => {
+    if (!date) return;
+
+    try {
+      setIsSavingQuestion(true);
+      const result = await addQuestionSchedule(questionId, date);
+      await schedulesQuery.refetch();
+      if (result) {
+        toast.success(`Question scheduled for ${date}.`);
+      }
+    } catch (error) {
+      toast.error("Unable to save schedule.", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setIsSavingQuestion(false);
+    }
+  };
+
+  const handleDeleteSchedule = async (scheduleId: string) => {
+    try {
+      setIsSavingQuestion(true);
+      await deleteQuestionSchedule(scheduleId);
+      await schedulesQuery.refetch();
+      toast.success("Schedule removed.");
+    } catch (error) {
+      toast.error("Unable to remove schedule.", {
         description: error instanceof Error ? error.message : "Please try again.",
       });
     } finally {
@@ -213,6 +271,15 @@ const AdminDashboard = () => {
             }`}
           >
             Manage questions
+          </button>
+          <button
+            onClick={() => setActiveTab("schedule")}
+            type="button"
+            className={`w-full rounded-none border border-transparent px-3 py-2 text-left font-editorial tracking-tight ${
+              activeTab === "schedule" ? "border-foreground/30 bg-foreground/5" : ""
+            }`}
+          >
+            Plan daily questions
           </button>
           <button
             onClick={() => setActiveTab("responses")}
@@ -255,6 +322,11 @@ const AdminDashboard = () => {
               </div>
 
               <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Pick a date for a question and it will be shown on that day. If several questions
+                  share a date, one is chosen at random. With no planned date, visitors get a random
+                  question.
+                </p>
                 <div className="flex items-center justify-between text-sm tracking-tight text-muted-foreground">
                   <span>Current questions</span>
                   <span>{questionsQuery.data?.length ?? 0} total</span>
@@ -271,7 +343,38 @@ const AdminDashboard = () => {
                       <p className="text-mono text-[10px] tracking-tight text-muted-foreground">
                         {questionItem.category}
                       </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="mt-3 space-y-2">
+                        <label className="text-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                          Pick a date to show this question
+                        </label>
+                        <input
+                          key={`${questionItem.id}-${(schedulesByQuestionId.get(String(questionItem.id)) ?? []).length}`}
+                          type="date"
+                          onChange={(event) => {
+                            const date = event.target.value;
+                            if (!date) return;
+                            void handleAddSchedule(String(questionItem.id), date);
+                          }}
+                          disabled={isSavingQuestion}
+                          className="rounded-none border border-border px-2 py-1 text-[10px]"
+                        />
+                        {(schedulesByQuestionId.get(String(questionItem.id)) ?? []).length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {(schedulesByQuestionId.get(String(questionItem.id)) ?? []).map((schedule) => (
+                              <button
+                                key={schedule.id}
+                                onClick={() => handleDeleteSchedule(schedule.id)}
+                                type="button"
+                                disabled={isSavingQuestion}
+                                className="rounded-none border border-primary/30 px-2 py-1 text-[10px] tracking-tight text-primary hover:bg-primary/5"
+                              >
+                                {schedule.scheduled_date} ×
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button
                           onClick={() => {
                             const id = String(questionItem.id);
@@ -341,6 +444,86 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               )}
+            </div>
+          ) : activeTab === "schedule" ? (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <h2 className="text-editorial text-xl font-bold tracking-tight">Plan daily questions</h2>
+                <p className="text-sm text-muted-foreground">
+                  Pick a question and a date — it is saved as soon as you choose the date. Multiple
+                  questions can share a date; one is chosen at random that day. With no planned date,
+                  visitors get a random question.
+                </p>
+                <div className="flex flex-col gap-3 md:flex-row">
+                  <select
+                    value={scheduleQuestionId}
+                    onChange={(event) => setScheduleQuestionId(event.target.value)}
+                    className="flex-1 rounded-none border border-border px-3 py-2 text-sm"
+                  >
+                    <option value="">Choose a question</option>
+                    {(questionsQuery.data ?? []).map((questionItem) => (
+                      <option key={questionItem.id} value={questionItem.id}>
+                        {questionItem.question}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(event) => {
+                      const date = event.target.value;
+                      setScheduleDate(date);
+                      if (scheduleQuestionId && date) {
+                        void handleAddSchedule(scheduleQuestionId, date).then(() => {
+                          setScheduleDate("");
+                        });
+                      }
+                    }}
+                    disabled={!scheduleQuestionId || isSavingQuestion}
+                    className="w-52 rounded-none border border-border px-3 py-2 text-sm disabled:opacity-60"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm tracking-tight text-muted-foreground">
+                  <span>Upcoming schedule</span>
+                  <span>{schedulesQuery.data?.length ?? 0} planned</span>
+                </div>
+                <div className="space-y-4">
+                  {(schedulesQuery.data ?? []).map((schedule) => (
+                    <div
+                      key={schedule.id}
+                      className="rounded-none border border-border px-4 py-3 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-mono text-[10px] uppercase tracking-[0.4em] text-muted-foreground">
+                          {schedule.scheduled_date}
+                        </p>
+                        <button
+                          onClick={() => handleDeleteSchedule(schedule.id)}
+                          type="button"
+                          disabled={isSavingQuestion}
+                          className="rounded-none border border-destructive px-3 py-1 text-[10px] tracking-tight text-destructive"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <p className="mt-2 text-editorial font-semibold text-base tracking-tight">
+                        {schedule.question?.question ?? "(question removed)"}
+                      </p>
+                      <p className="text-mono text-[10px] tracking-tight text-muted-foreground">
+                        {schedule.question?.category ?? ""}
+                      </p>
+                    </div>
+                  ))}
+                  {!schedulesQuery.data?.length && (
+                    <p className="text-sm text-muted-foreground">
+                      No dates planned yet. Pick a date on a question to add it to the schedule.
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="space-y-6">

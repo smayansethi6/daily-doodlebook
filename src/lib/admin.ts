@@ -51,6 +51,50 @@ export async function deleteQuestion(id: string) {
   if (error) throw error;
 }
 
+export interface QuestionSchedule {
+  id: string;
+  question_id: string;
+  scheduled_date: string;
+  created_at: string;
+  question?: {
+    id: string;
+    question: string;
+    category: string;
+  };
+}
+
+export async function fetchQuestionSchedules() {
+  const { data, error } = await supabase
+    .from("question_schedules")
+    .select("*, question:questions(id, question, category)")
+    .order("scheduled_date", { ascending: true });
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function addQuestionSchedule(questionId: string, scheduledDate: string) {
+  const { data, error } = await supabase
+    .from("question_schedules")
+    .insert({ question_id: questionId, scheduled_date: scheduledDate })
+    .select("*, question:questions(id, question, category)")
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      return null;
+    }
+    throw error;
+  }
+
+  return data;
+}
+
+export async function deleteQuestionSchedule(id: string) {
+  const { error } = await supabase.from("question_schedules").delete().eq("id", id);
+  if (error) throw error;
+}
+
 interface ResponseFilter {
   category?: string;
   search?: string;

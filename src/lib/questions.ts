@@ -6,15 +6,78 @@ export interface Question {
   category: string;
 }
 
+const DAILY_QUESTION_KEY = "daily-doodlebook-daily-question";
+
+interface StoredDailyQuestion {
+  date: string;
+  savedAt: string;
+  question: Question;
+}
+
+function readJSON<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+
+  const raw = window.localStorage.getItem(key);
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch (error) {
+    console.error("Unable to parse localStorage key", key, error);
+    return null;
+  }
+}
+
+export function getTodayDateKey(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getCachedDailyQuestion(): Question | undefined {
+  const stored = readJSON<StoredDailyQuestion>(DAILY_QUESTION_KEY);
+  if (!stored || stored.date !== getTodayDateKey()) {
+    return undefined;
+  }
+
+  return stored.question;
+}
+
+function saveDailyQuestion(question: Question) {
+  if (typeof window === "undefined") return;
+
+  const payload: StoredDailyQuestion = {
+    date: getTodayDateKey(),
+    savedAt: new Date().toISOString(),
+    question,
+  };
+
+  window.localStorage.setItem(DAILY_QUESTION_KEY, JSON.stringify(payload));
+}
+
 export async function fetchDailyQuestion(): Promise<Question | undefined> {
-  const { data, error } = await supabase.rpc<Question[]>("get_random_question");
+  const cached = getCachedDailyQuestion();
+  if (cached) {
+    return cached;
+  }
+
+  const { data, error } = await supabase.rpc<Question[]>("get_daily_question", {
+    target_date: getTodayDateKey(),
+  });
 
   if (error) {
     console.error("Unable to load today's question", error);
     return undefined;
   }
 
-  return data?.[0] ?? undefined;
+  const question = data?.[0];
+  if (question) {
+    saveDailyQuestion(question);
+  }
+
+  return question;
 }
 
 export interface ResponseRecord {

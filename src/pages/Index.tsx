@@ -1,7 +1,13 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchDailyQuestion, getTodayDateString, getIssueNumber, Question } from "@/lib/questions";
+import {
+  fetchDailyQuestion,
+  getTodayDateKey,
+  getTodayDateString,
+  getIssueNumber,
+  Question,
+} from "@/lib/questions";
 import { hasLocalResponseForDate, RESPONSE_HISTORY_EVENT } from "@/lib/localResponses";
 import QuestionCard from "@/components/QuestionCard";
 
@@ -10,7 +16,7 @@ const Index = () => {
   const issueNum = getIssueNumber();
   const [hasTodayResponse, setHasTodayResponse] = useState(false);
   const { data: question, isLoading, isError } = useQuery<Question | undefined>({
-    queryKey: ["daily-question"],
+    queryKey: ["daily-question", getTodayDateKey()],
     queryFn: fetchDailyQuestion,
     staleTime: 1000 * 60 * 5,
   });

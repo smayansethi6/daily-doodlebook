@@ -11,10 +11,13 @@ vi.mock("@/lib/admin", () => {
     fetchQuestions: vi.fn(async () => [
       { id: "1", question: "What is your favorite color?", category: "Icebreakers" },
     ]),
+    fetchQuestionSchedules: vi.fn(async () => []),
     fetchResponses: vi.fn(async () => []),
     createQuestion: vi.fn(),
     updateQuestion: vi.fn(),
     deleteQuestion: vi.fn(),
+    addQuestionSchedule: vi.fn(),
+    deleteQuestionSchedule: vi.fn(),
   };
 });
 
