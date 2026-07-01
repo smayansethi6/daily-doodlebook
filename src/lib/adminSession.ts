@@ -5,10 +5,27 @@ export interface AdminSession {
   email: string;
 }
 
-function readAdminSession(): AdminSession | null {
+function getStorage() {
   if (typeof window === "undefined") return null;
 
-  const raw = window.localStorage.getItem(ADMIN_SESSION_KEY);
+  const storage = window.localStorage;
+  if (
+    !storage ||
+    typeof storage.getItem !== "function" ||
+    typeof storage.setItem !== "function" ||
+    typeof storage.removeItem !== "function"
+  ) {
+    return null;
+  }
+
+  return storage;
+}
+
+function readAdminSession(): AdminSession | null {
+  const storage = getStorage();
+  if (!storage) return null;
+
+  const raw = storage.getItem(ADMIN_SESSION_KEY);
   if (!raw) return null;
 
   try {
@@ -20,14 +37,18 @@ function readAdminSession(): AdminSession | null {
 }
 
 export function persistAdminSession(session: AdminSession) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+  const storage = getStorage();
+  if (!storage || typeof window === "undefined") return;
+
+  storage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
   window.dispatchEvent(new CustomEvent(ADMIN_SESSION_EVENT));
 }
 
 export function clearAdminSession() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(ADMIN_SESSION_KEY);
+  const storage = getStorage();
+  if (!storage || typeof window === "undefined") return;
+
+  storage.removeItem(ADMIN_SESSION_KEY);
   window.dispatchEvent(new CustomEvent(ADMIN_SESSION_EVENT));
 }
 

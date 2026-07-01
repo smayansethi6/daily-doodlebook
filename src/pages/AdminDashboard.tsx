@@ -76,7 +76,9 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (!editingId) return;
     requestAnimationFrame(() => {
-      editingPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (typeof editingPanelRef.current?.scrollIntoView === "function") {
+        editingPanelRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
     });
   }, [editingId]);
 

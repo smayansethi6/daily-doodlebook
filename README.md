@@ -6,6 +6,13 @@
 2. Install dependencies (this project uses Node 22+): `npm install`.
 3. Run the dev server with `npm run dev`.
 
+## Gemini
+
+- The floating reflection chatbot uses the official `@google/genai` JavaScript SDK with `gemini-2.5-flash` by default.
+- Add `VITE_GEMINI_API_KEY` to `.env` to enable the chatbot.
+- Optional: override the model with `VITE_GEMINI_MODEL`.
+- The chatbot behavior is shaped through app-specific system instructions rather than true model fine-tuning.
+
 ## Supabase
 
 - The app pulls a single, randomly selected question via a Supabase Postgres function, so the `questions` table is the primary source of truth.

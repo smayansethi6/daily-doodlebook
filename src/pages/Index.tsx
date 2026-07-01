@@ -10,6 +10,7 @@ import {
 } from "@/lib/questions";
 import { hasLocalResponseForDate, RESPONSE_HISTORY_EVENT } from "@/lib/localResponses";
 import QuestionCard from "@/components/QuestionCard";
+import DailyDoodleChatbot from "@/components/DailyDoodleChatbot";
 
 const Index = () => {
   const today = getTodayDateString();
@@ -117,6 +118,8 @@ const Index = () => {
           </p>
         </div>
       </footer>
+
+      <DailyDoodleChatbot question={question} hasTodayResponse={hasTodayResponse} />
     </div>
   );
 };
