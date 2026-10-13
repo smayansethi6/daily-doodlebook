@@ -1,58 +1,69 @@
 import { GoogleGenAI, type Chat } from "@google/genai";
 import type { Question } from "@/lib/questions";
+import { isFallbackQuestion } from "@/lib/questions";
 
 const fallbackModelName = "gemini-2.5-flash";
 const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 export const hasGeminiConfig = Boolean(geminiApiKey);
+export const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL || fallbackModelName;
 
-function buildSystemInstruction(question?: Question, hasTodayResponse?: boolean) {
+export function getGeminiClient(): GoogleGenAI | null {
+  if (!geminiApiKey) return null;
+  return new GoogleGenAI({ apiKey: geminiApiKey });
+}
+
+export interface InkContext {
+  question?: Question;
+  hasTodayResponse: boolean;
+  /** An opposing reflection the visitor asked Ink to steelman. */
+  otherSideExcerpt?: string;
+}
+
+function buildSystemInstruction({ question, hasTodayResponse, otherSideExcerpt }: InkContext) {
   const questionContext = question
-    ? `Today's reflection prompt is in the "${question.category}" category: "${question.question}".`
-    : "Today's reflection prompt has not loaded yet, so keep guidance general and invite the user to refresh if they want prompt-specific help.";
+    ? `${
+        isFallbackQuestion(question)
+          ? "Today's scheduled prompt could not be loaded, so the visitor is answering ThinkPhil's evergreen standby prompt"
+          : `Today's reflection prompt is in the "${question.category}" category`
+      }: "${question.question}".`
+    : "Today's reflection prompt has not loaded yet, so keep guidance general.";
 
   const responseContext = hasTodayResponse
-    ? "The user has already submitted today's reflection, so focus on helping them unpack, expand, or revisit it rather than telling them to submit a new answer."
-    : "The user may still be writing today's reflection, so help them brainstorm, clarify, and structure their response without pretending to know what they think."
-  ;
+    ? "The visitor has already submitted today's reflection, so help them unpack, expand, or revisit it rather than telling them to submit a new answer."
+    : "The visitor may still be writing today's reflection, so help them brainstorm, clarify, and structure their response without pretending to know what they think.";
+
+  const otherSideContext = otherSideExcerpt
+    ? `The visitor has just read this anonymous reflection from someone who disagreed with them: "${otherSideExcerpt}" When they ask you to steelman it, make the strongest honest case for that specific position before offering any critique.`
+    : "";
 
   return [
-    "You are Ink, a warm reflection companion inside the Daily Doodlebook app.",
-    "Help users think more deeply about the daily prompt, but do not write full essays unless they explicitly ask.",
+    "You are Ink, a warm reflection companion inside ThinkPhil, a site that asks one philosophical question a day.",
+    "Help visitors think more deeply about the daily prompt, but do not write full essays unless they explicitly ask.",
     "Prefer short, thoughtful responses with concrete follow-up questions or writing cues.",
     "Keep the tone calm, encouraging, and literary.",
     "Never claim to save responses or modify app data.",
     questionContext,
     responseContext,
-  ].join(" ");
+    otherSideContext,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
-function getGeminiClient() {
-  if (!geminiApiKey) {
+export function createReflectionChatSession(context: InkContext): Chat {
+  const ai = getGeminiClient();
+  if (!ai) {
     throw new Error("Gemini is not configured for this app.");
   }
 
-  return new GoogleGenAI({ apiKey: geminiApiKey });
-}
-
-function createChat(question?: Question, hasTodayResponse?: boolean): Chat {
-  const ai = getGeminiClient();
-  const modelName = import.meta.env.VITE_GEMINI_MODEL || fallbackModelName;
-
   return ai.chats.create({
-    model: modelName,
+    model: GEMINI_MODEL,
     config: {
-      systemInstruction: buildSystemInstruction(question, hasTodayResponse),
+      systemInstruction: buildSystemInstruction(context),
       temperature: 0.8,
       topP: 0.9,
       maxOutputTokens: 400,
     },
   });
-}
-
-export function createReflectionChatSession(
-  question?: Question,
-  hasTodayResponse?: boolean
-): Chat {
-  return createChat(question, hasTodayResponse);
 }

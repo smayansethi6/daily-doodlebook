@@ -34,10 +34,21 @@ export async function createQuestion(question: string, category: string) {
   return data;
 }
 
-export async function updateQuestion(id: string, question: string, category: string) {
+export interface QuestionStanceSettings {
+  stance_enabled: boolean;
+  stance_label_low: string | null;
+  stance_label_high: string | null;
+}
+
+export async function updateQuestion(
+  id: string,
+  question: string,
+  category: string,
+  stance?: QuestionStanceSettings
+) {
   const { data, error } = await supabase
     .from("questions")
-    .update({ question, category })
+    .update({ question, category, ...(stance ?? {}) })
     .eq("id", id)
     .select("*")
     .single();
@@ -127,4 +138,41 @@ export async function fetchResponses(filters: ResponseFilter = {}) {
   const { data, error } = await query;
   if (error) throw error;
   return data ?? [];
+}
+
+export type ModerationStatus = "pending" | "approved" | "rejected" | "hidden";
+
+export interface ModerationEntry {
+  id: string;
+  response: string;
+  category: string;
+  created_at: string;
+  stance: number | null;
+  moderation_status: ModerationStatus;
+  moderation_reason: string | null;
+  question?: { question: string } | null;
+}
+
+/** Only entries the visitor consented to share can ever need a decision. */
+export async function fetchModerationQueue(status: ModerationStatus) {
+  const { data, error } = await supabase
+    .from("responses")
+    .select(
+      "id, response, category, created_at, stance, moderation_status, moderation_reason, question:questions(question)"
+    )
+    .eq("share_consent", true)
+    .eq("moderation_status", status)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as unknown as ModerationEntry[];
+}
+
+export async function setModerationStatus(id: string, status: ModerationStatus) {
+  const { error } = await supabase
+    .from("responses")
+    .update({ moderation_status: status })
+    .eq("id", id);
+
+  if (error) throw error;
 }

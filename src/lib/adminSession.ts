@@ -1,5 +1,5 @@
-const ADMIN_SESSION_KEY = "daily-doodlebook-admin-session";
-export const ADMIN_SESSION_EVENT = "daily-doodlebook-admin-session-updated";
+const ADMIN_SESSION_KEY = "thinkphil-admin-session";
+export const ADMIN_SESSION_EVENT = "thinkphil-admin-session-updated";
 
 export interface AdminSession {
   email: string;

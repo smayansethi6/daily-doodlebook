@@ -6,11 +6,15 @@ import {
   createQuestion,
   deleteQuestion,
   deleteQuestionSchedule,
+  fetchModerationQueue,
   fetchQuestionSchedules,
   fetchQuestions,
   fetchResponses,
+  setModerationStatus,
   updateQuestion,
+  type ModerationStatus,
 } from "@/lib/admin";
+import { STANCE_LABELS, type StanceValue } from "@/lib/stance";
 import { clearAdminSession, getAdminSession } from "@/lib/adminSession";
 import { toast } from "@/components/ui/sonner";
 import {
@@ -56,7 +60,9 @@ const PieTooltip = ({ active, payload }: TooltipProps<number, string>) => {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<"questions" | "schedule" | "responses">("questions");
+  const [activeTab, setActiveTab] = useState<
+    "questions" | "schedule" | "responses" | "moderation"
+  >("questions");
   const [newQuestion, setNewQuestion] = useState("");
   const [newCategory, setNewCategory] = useState("");
   const [scheduleQuestionId, setScheduleQuestionId] = useState("");
@@ -64,6 +70,12 @@ const AdminDashboard = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingQuestion, setEditingQuestion] = useState("");
   const [editingCategory, setEditingCategory] = useState("");
+  const [editingStance, setEditingStance] = useState({
+    stance_enabled: true,
+    stance_label_low: "",
+    stance_label_high: "",
+  });
+  const [queueStatus, setQueueStatus] = useState<ModerationStatus>("pending");
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   const editingPanelRef = useRef<HTMLDivElement | null>(null);
   const [responseFilter, setResponseFilter] = useState({
@@ -122,6 +134,24 @@ const AdminDashboard = () => {
       }),
   });
 
+  const moderationQuery = useQuery({
+    queryKey: ["admin-moderation", queueStatus],
+    queryFn: () => fetchModerationQueue(queueStatus),
+    enabled: activeTab === "moderation",
+  });
+
+  const handleModerate = async (id: string, status: ModerationStatus) => {
+    try {
+      await setModerationStatus(id, status);
+      await moderationQuery.refetch();
+      toast.success(`Entry ${status}.`);
+    } catch (error) {
+      toast.error("Unable to update this entry.", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+    }
+  };
+
   const categories = useMemo(() => {
     const values = questionsQuery.data ?? [];
     return Array.from(new Set(values.map((item) => item.category))).sort();
@@ -178,7 +208,11 @@ const AdminDashboard = () => {
 
     try {
       setIsSavingQuestion(true);
-      await updateQuestion(editingId, question, category);
+      await updateQuestion(editingId, question, category, {
+        stance_enabled: editingStance.stance_enabled,
+        stance_label_low: editingStance.stance_label_low.trim() || null,
+        stance_label_high: editingStance.stance_label_high.trim() || null,
+      });
       setEditingId(null);
       setEditingQuestion("");
       setEditingCategory("");
@@ -292,6 +326,15 @@ const AdminDashboard = () => {
           >
             Manage responses
           </button>
+          <button
+            onClick={() => setActiveTab("moderation")}
+            type="button"
+            className={`w-full rounded-none border border-transparent px-3 py-2 text-left font-editorial tracking-tight ${
+              activeTab === "moderation" ? "border-foreground/30 bg-foreground/5" : ""
+            }`}
+          >
+            Moderation queue
+          </button>
         </nav>
 
         <section className="space-y-6 rounded-none border border-border bg-card p-6">
@@ -389,6 +432,11 @@ const AdminDashboard = () => {
                             setEditingId(id);
                             setEditingQuestion(questionItem.question);
                             setEditingCategory(questionItem.category);
+                            setEditingStance({
+                              stance_enabled: questionItem.stance_enabled !== false,
+                              stance_label_low: questionItem.stance_label_low ?? "",
+                              stance_label_high: questionItem.stance_label_high ?? "",
+                            });
                           }}
                           type="button"
                           disabled={isSavingQuestion}
@@ -427,6 +475,55 @@ const AdminDashboard = () => {
                       onChange={(event) => setEditingCategory(event.target.value)}
                       className="w-52 rounded-none border border-border px-3 py-2 text-sm"
                     />
+                  </div>
+
+                  <div className="mt-4 space-y-3 border-t border-border pt-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={editingStance.stance_enabled}
+                        onChange={(event) =>
+                          setEditingStance((prev) => ({
+                            ...prev,
+                            stance_enabled: event.target.checked,
+                          }))
+                        }
+                      />
+                      Show the agree / disagree scale for this question
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Turn this off for open questions where taking a side makes no sense. Visitors
+                      still read one other reflection afterwards.
+                    </p>
+                    <div className="flex flex-col gap-3 md:flex-row">
+                      <input
+                        value={editingStance.stance_label_low}
+                        onChange={(event) =>
+                          setEditingStance((prev) => ({
+                            ...prev,
+                            stance_label_low: event.target.value,
+                          }))
+                        }
+                        placeholder="Low end label (default: Disagree)"
+                        disabled={!editingStance.stance_enabled}
+                        className="flex-1 rounded-none border border-border px-3 py-2 text-sm disabled:opacity-60"
+                      />
+                      <input
+                        value={editingStance.stance_label_high}
+                        onChange={(event) =>
+                          setEditingStance((prev) => ({
+                            ...prev,
+                            stance_label_high: event.target.value,
+                          }))
+                        }
+                        placeholder="High end label (default: Agree)"
+                        disabled={!editingStance.stance_enabled}
+                        className="flex-1 rounded-none border border-border px-3 py-2 text-sm disabled:opacity-60"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-col gap-3 md:flex-row">
                     <button
                       onClick={handleUpdateQuestion}
                       type="button"
@@ -525,6 +622,101 @@ const AdminDashboard = () => {
                     </p>
                   )}
                 </div>
+              </div>
+            </div>
+          ) : activeTab === "moderation" ? (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <h2 className="text-editorial text-xl font-bold tracking-tight">Moderation queue</h2>
+                <p className="text-sm text-muted-foreground">
+                  Only entries whose writer ticked “Let others read this anonymously” appear here.
+                  Nothing is shown to another visitor until it is approved.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(["pending", "approved", "rejected", "hidden"] as ModerationStatus[]).map(
+                    (status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={() => setQueueStatus(status)}
+                        className={`rounded-none border px-3 py-2 text-[11px] uppercase tracking-[0.12em] ${
+                          queueStatus === status
+                            ? "border-foreground bg-foreground/5 text-foreground"
+                            : "border-foreground/30 text-muted-foreground hover:bg-foreground/5"
+                        }`}
+                      >
+                        {status}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+
+              {moderationQuery.isLoading && (
+                <p className="text-sm text-muted-foreground">Loading the queue…</p>
+              )}
+
+              {moderationQuery.data?.length === 0 && !moderationQuery.isLoading && (
+                <p className="text-sm text-muted-foreground">
+                  Nothing {queueStatus} right now.
+                </p>
+              )}
+
+              <div className="space-y-4">
+                {(moderationQuery.data ?? []).map((entry) => (
+                  <div key={entry.id} className="rounded-none border border-border px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                      <span>{entry.category}</span>
+                      <span>{new Date(entry.created_at).toLocaleString("en-GB")}</span>
+                    </div>
+                    <p className="text-editorial mt-2 text-lg leading-snug text-foreground">
+                      {entry.question?.question ?? "(question removed)"}
+                    </p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                      {entry.response}
+                    </p>
+                    <p className="mt-2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                      Stance:{" "}
+                      {entry.stance === null
+                        ? "none"
+                        : STANCE_LABELS[entry.stance as StanceValue]}
+                    </p>
+                    {entry.moderation_reason && (
+                      <p className="mt-2 border-l-2 border-destructive pl-3 text-[12px] text-destructive">
+                        Flagged by the automatic screen: {entry.moderation_reason}
+                      </p>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {entry.moderation_status !== "approved" && (
+                        <button
+                          type="button"
+                          onClick={() => void handleModerate(entry.id, "approved")}
+                          className="rounded-none border border-foreground/40 px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-foreground hover:bg-foreground/5"
+                        >
+                          Approve
+                        </button>
+                      )}
+                      {entry.moderation_status !== "rejected" && (
+                        <button
+                          type="button"
+                          onClick={() => void handleModerate(entry.id, "rejected")}
+                          className="rounded-none border border-destructive px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-destructive"
+                        >
+                          Reject
+                        </button>
+                      )}
+                      {entry.moderation_status !== "hidden" && (
+                        <button
+                          type="button"
+                          onClick={() => void handleModerate(entry.id, "hidden")}
+                          className="rounded-none border border-foreground/40 px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-muted-foreground hover:bg-foreground/5"
+                        >
+                          Hide
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ) : (

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ThinkPhil">
+  <rect width="64" height="64" fill="#1d2127"/>
+  <path d="M12 18h30v7H30.5v26h-8.5V25H12z" fill="#efe9df"/>
+  <circle cx="50" cy="47" r="6" fill="#d79a2b"/>
+</svg>

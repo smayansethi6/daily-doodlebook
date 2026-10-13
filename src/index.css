@@ -37,6 +37,9 @@
     --radius: 0.25rem;
 
     --ochre: 36 70% 52%;
+    /* The ochre accent when it carries text or glyphs: dark enough on cream to
+       clear the WCAG AA contrast floor, which the 52% lightness does not. */
+    --ochre-deep: 36 72% 36%;
     --charcoal: 220 20% 18%;
     --cream: 40 33% 95%;
     --ink: 220 20% 10%;

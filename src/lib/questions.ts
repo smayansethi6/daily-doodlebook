@@ -1,12 +1,44 @@
 import { supabase } from "@/lib/supabase";
+import { getTodayDateKey } from "@/lib/time";
 
 export interface Question {
   id: string;
   question: string;
   category: string;
+  stance_enabled?: boolean;
+  stance_label_low?: string | null;
+  stance_label_high?: string | null;
 }
 
-const DAILY_QUESTION_KEY = "daily-doodlebook-daily-question";
+/**
+ * "cache" is today's question read back from this device — the normal fast
+ * path. "stale" and "fallback" mean the network failed and the visitor is
+ * seeing something older or bundled, which the page tells them about.
+ */
+export type QuestionSource = "network" | "cache" | "stale" | "fallback";
+
+export interface DailyQuestion {
+  question: Question;
+  source: QuestionSource;
+}
+
+const DAILY_QUESTION_KEY = "thinkphil-daily-question";
+const LEGACY_DAILY_QUESTION_KEY = "daily-doodlebook-daily-question";
+
+/**
+ * Bundled with the app so a visitor always has something to answer, even with
+ * the network down. Its id is not a real row, so entries against it stay local.
+ */
+export const FALLBACK_QUESTION: Question = {
+  id: "fallback-evergreen",
+  question: "What is something you believe today that you did not believe a year ago?",
+  category: "Self",
+  stance_enabled: false,
+};
+
+export function isFallbackQuestion(question: Question | undefined): boolean {
+  return question?.id === FALLBACK_QUESTION.id;
+}
 
 interface StoredDailyQuestion {
   date: string;
@@ -28,21 +60,11 @@ function readJSON<T>(key: string): T | null {
   }
 }
 
-export function getTodayDateKey(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getCachedDailyQuestion(): Question | undefined {
-  const stored = readJSON<StoredDailyQuestion>(DAILY_QUESTION_KEY);
-  if (!stored || stored.date !== getTodayDateKey()) {
-    return undefined;
-  }
-
-  return stored.question;
+function getCachedDailyQuestion(): StoredDailyQuestion | null {
+  return (
+    readJSON<StoredDailyQuestion>(DAILY_QUESTION_KEY) ??
+    readJSON<StoredDailyQuestion>(LEGACY_DAILY_QUESTION_KEY)
+  );
 }
 
 function saveDailyQuestion(question: Question) {
@@ -55,29 +77,53 @@ function saveDailyQuestion(question: Question) {
   };
 
   window.localStorage.setItem(DAILY_QUESTION_KEY, JSON.stringify(payload));
+  window.localStorage.removeItem(LEGACY_DAILY_QUESTION_KEY);
 }
 
-export async function fetchDailyQuestion(): Promise<Question | undefined> {
-  const cached = getCachedDailyQuestion();
-  if (cached) {
-    return cached;
-  }
+const RETRY_DELAYS_MS = [400, 1200, 3000];
 
-  const { data, error } = await supabase.rpc<Question[]>("get_daily_question", {
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function loadQuestionFromNetwork(): Promise<Question | undefined> {
+  const { data, error } = await supabase.rpc("get_daily_question", {
     target_date: getTodayDateKey(),
   });
 
-  if (error) {
-    console.error("Unable to load today's question", error);
-    return undefined;
+  if (error) throw error;
+  return (data as Question[] | null)?.[0];
+}
+
+/**
+ * Three attempts with backoff, then today's cached question, then the bundled
+ * evergreen one. Never resolves to nothing: the page always has a question.
+ */
+export async function fetchDailyQuestion(): Promise<DailyQuestion> {
+  const cached = getCachedDailyQuestion();
+  if (cached?.date === getTodayDateKey()) {
+    return { question: cached.question, source: "cache" };
   }
 
-  const question = data?.[0];
-  if (question) {
-    saveDailyQuestion(question);
+  for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const question = await loadQuestionFromNetwork();
+      if (question) {
+        saveDailyQuestion(question);
+        return { question, source: "network" };
+      }
+      break;
+    } catch (error) {
+      console.error(`Unable to load today's question (attempt ${attempt + 1})`, error);
+      if (attempt < RETRY_DELAYS_MS.length - 1) {
+        await wait(RETRY_DELAYS_MS[attempt]);
+      }
+    }
   }
 
-  return question;
+  if (cached) {
+    return { question: cached.question, source: "stale" };
+  }
+
+  return { question: FALLBACK_QUESTION, source: "fallback" };
 }
 
 export interface ResponseRecord {
@@ -85,55 +131,89 @@ export interface ResponseRecord {
   question_id: string;
   category: string;
   response: string;
+  stance: number | null;
   created_at: string;
 }
 
-export async function submitResponse(
-  questionId: string,
-  category: string,
-  response: string
-): Promise<ResponseRecord> {
+export interface SubmitResponseInput {
+  questionId: string;
+  category: string;
+  response: string;
+  stance: number | null;
+  shareConsent: boolean;
+  moderationStatus: "pending" | "rejected";
+  moderationReason?: string;
+}
+
+export async function submitResponse(input: SubmitResponseInput): Promise<ResponseRecord> {
   const { data, error } = await supabase
     .from("responses")
-    .insert({ question_id: questionId, category, response })
-    .select("*")
+    .insert({
+      question_id: input.questionId,
+      category: input.category,
+      response: input.response,
+      stance: input.stance,
+      share_consent: input.shareConsent,
+      moderation_status: input.moderationStatus,
+      moderation_reason: input.moderationReason ?? null,
+    })
+    .select("id, question_id, category, response, stance, created_at")
     .single();
 
-  if (error) {
-    throw error;
-  }
-
-  return data;
+  if (error) throw error;
+  return data as ResponseRecord;
 }
 
-export async function fetchResponsesByIds(ids: string[]) {
-  if (!ids.length) return [];
-
-  const { data, error } = await supabase
-    .from("responses")
-    .select("id, response, created_at, category, question:questions(*)")
-    .in("id", ids)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
+export interface StanceCounts {
+  /** Index 0..4 maps to stance −2..2. */
+  buckets: number[];
+  withStance: number;
+  noStance: number;
+  total: number;
 }
 
-export function getTodayDateString(): string {
-  return new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
+export async function fetchStanceCounts(questionId: string): Promise<StanceCounts> {
+  const { data, error } = await supabase.rpc("stance_counts", { p_question_id: questionId });
+  if (error) throw error;
+
+  const buckets = [0, 0, 0, 0, 0];
+  let noStance = 0;
+
+  ((data as { stance: number | null; responses: number }[] | null) ?? []).forEach((row) => {
+    const count = Number(row.responses);
+    if (row.stance === null) {
+      noStance += count;
+      return;
+    }
+    buckets[row.stance + 2] += count;
   });
+
+  const withStance = buckets.reduce((sum, value) => sum + value, 0);
+  return { buckets, withStance, noStance, total: withStance + noStance };
 }
 
-export function getIssueNumber(): number {
-  const start = new Date("2026-01-01");
-  const now = new Date();
-  const diff = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  return diff + 1;
+export interface OtherSideReflection {
+  id: string;
+  excerpt: string;
+  stance: number;
+}
+
+export async function fetchOtherSide(
+  questionId: string,
+  opposingSign: -1 | 1,
+  excludeIds: string[]
+): Promise<OtherSideReflection | undefined> {
+  const { data, error } = await supabase.rpc("other_side", {
+    p_question_id: questionId,
+    p_opposing_sign: opposingSign,
+    p_exclude_ids: excludeIds,
+  });
+
+  if (error) throw error;
+  return (data as OtherSideReflection[] | null)?.[0];
+}
+
+export async function reportResponse(responseId: string): Promise<void> {
+  const { error } = await supabase.rpc("report_response", { p_response_id: responseId });
+  if (error) throw error;
 }
