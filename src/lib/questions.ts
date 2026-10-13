@@ -179,23 +179,25 @@ export async function fetchStanceCounts(questionId: string): Promise<StanceCount
   const buckets = [0, 0, 0, 0, 0];
   let noStance = 0;
 
-  ((data as { stance: number | null; responses: number }[] | null) ?? []).forEach((row) => {
-    const count = Number(row.responses);
-    if (row.stance === null) {
-      noStance += count;
-      return;
+  ((data as { stance_value: number | null; response_count: number }[] | null) ?? []).forEach(
+    (row) => {
+      const count = Number(row.response_count);
+      if (row.stance_value === null) {
+        noStance += count;
+        return;
+      }
+      buckets[row.stance_value + 2] += count;
     }
-    buckets[row.stance + 2] += count;
-  });
+  );
 
   const withStance = buckets.reduce((sum, value) => sum + value, 0);
   return { buckets, withStance, noStance, total: withStance + noStance };
 }
 
 export interface OtherSideReflection {
-  id: string;
+  response_id: string;
   excerpt: string;
-  stance: number;
+  stance_value: number;
 }
 
 export async function fetchOtherSide(

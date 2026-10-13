@@ -11,6 +11,7 @@ import {
   fetchQuestions,
   fetchResponses,
   setModerationStatus,
+  signOutAdmin,
   updateQuestion,
   type ModerationStatus,
 } from "@/lib/admin";
@@ -167,8 +168,9 @@ const AdminDashboard = () => {
 
   const barData = useMemo(() => responseCounts, [responseCounts]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (!confirm("Are you sure you want to sign out?")) return;
+    await signOutAdmin();
     clearAdminSession();
     navigate("/admin/login");
   };
@@ -288,7 +290,7 @@ const AdminDashboard = () => {
             </p>
           </div>
           <button
-            onClick={handleLogout}
+            onClick={() => void handleLogout()}
             type="button"
             className="inline-flex h-12 w-32 items-center justify-center rounded-none border border-foreground/40 bg-card text-[10px] uppercase tracking-[0.4em] text-muted-foreground hover:bg-foreground/5 transition"
           >

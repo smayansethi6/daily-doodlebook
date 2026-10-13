@@ -60,8 +60,11 @@ create policy "Team may delete responses" on responses
   using (true);
 
 -- Aggregate stance counts for one question. Counts only — no rows, no text.
+-- The output columns are deliberately not named "stance" or "responses": in a
+-- SQL-language function those names are in scope as parameters and would shadow
+-- the table and its column.
 create or replace function stance_counts(p_question_id uuid)
-returns table (stance smallint, responses bigint)
+returns table (stance_value smallint, response_count bigint)
 language sql
 stable
 security definer
@@ -80,7 +83,7 @@ create or replace function other_side(
   p_opposing_sign smallint,
   p_exclude_ids uuid[] default '{}'
 )
-returns table (id uuid, excerpt text, stance smallint)
+returns table (response_id uuid, excerpt text, stance_value smallint)
 language sql
 stable
 security definer
@@ -92,7 +95,7 @@ as $$
     and r.share_consent
     and r.moderation_status = 'approved'
     and r.stance is not null
-    and sign(r.stance) = p_opposing_sign
+    and case when p_opposing_sign < 0 then r.stance < 0 else r.stance > 0 end
     and not (r.id = any(coalesce(p_exclude_ids, '{}')))
   order by random()
   limit 1;

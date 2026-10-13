@@ -42,7 +42,7 @@ function ReflectionSlot({
       try {
         const reflection = await fetchOtherSide(questionId, opposingSign, excludeIds);
         if (reflection) {
-          setCurrent({ id: reflection.id, excerpt: reflection.excerpt, isSeed: false });
+          setCurrent({ id: reflection.response_id, excerpt: reflection.excerpt, isSeed: false });
           return;
         }
       } catch (error) {

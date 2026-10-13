@@ -13,6 +13,10 @@ export async function signInAdmin(email: string, password: string) {
   return { email: data.user?.email ?? email };
 }
 
+export async function signOutAdmin() {
+  await supabase.auth.signOut();
+}
+
 export async function fetchQuestions() {
   const { data, error } = await supabase
     .from("questions")
