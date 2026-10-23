@@ -26,4 +26,5 @@ env
 *.sw?
 .env
 .env.*
+!.env.example
 .vercel

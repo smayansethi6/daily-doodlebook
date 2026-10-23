@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Send, Sparkles, X } from "lucide-react";
-import type { Chat } from "@google/genai";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { createReflectionChatSession, hasGeminiConfig } from "@/lib/geminiChat";
+import {
+  InkBusyError,
+  InkUnavailableError,
+  sendInkMessage,
+  type InkMessage,
+} from "@/lib/geminiChat";
 import type { Question } from "@/lib/questions";
 
 const STARTER_PROMPTS = [
@@ -12,7 +16,7 @@ const STARTER_PROMPTS = [
   "Help me structure a reply",
 ];
 
-const MISSING_CONFIG_MESSAGE = "Add VITE_GEMINI_API_KEY in .env to enable Ink.";
+const UNAVAILABLE_MESSAGE = "Ink is not switched on for this site yet.";
 
 export interface SteelmanRequest {
   excerpt: string;
@@ -29,6 +33,8 @@ interface ChatMessage {
   id: string;
   role: "assistant" | "user";
   content: string;
+  /** Shown to the visitor but not part of the conversation sent to the model. */
+  local?: boolean;
 }
 
 function buildWelcome(question?: Question, hasTodayResponse?: boolean) {
@@ -50,16 +56,16 @@ export default function InkPanel({
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: "welcome", role: "assistant", content: buildWelcome(question, hasTodayResponse) },
+    { id: "welcome", role: "assistant", content: buildWelcome(question, hasTodayResponse), local: true },
   ]);
-  const chatRef = useRef<Chat | null>(null);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const steelmanContext = useRef<string | undefined>();
   const messageListRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    chatRef.current = null;
     setMessages([
-      { id: "welcome", role: "assistant", content: buildWelcome(question, hasTodayResponse) },
+      { id: "welcome", role: "assistant", content: buildWelcome(question, hasTodayResponse), local: true },
     ]);
     // Keyed on the question's identity: a refetch returning the same question
     // must not wipe a conversation in progress.
@@ -78,37 +84,24 @@ export default function InkPanel({
       const trimmed = text.trim();
       if (!trimmed || isSending) return;
 
+      const history: InkMessage[] = [
+        ...messagesRef.current
+          .filter((message) => !message.local)
+          .map(({ role, content }) => ({ role, content })),
+        { role: "user", content: trimmed },
+      ];
       setMessages((current) => [
         ...current,
         { id: `${Date.now()}-user`, role: "user", content: trimmed },
       ]);
       setInput("");
-
-      if (!hasGeminiConfig) {
-        setMessages((current) => [
-          ...current,
-          {
-            id: `${Date.now()}-assistant-config`,
-            role: "assistant",
-            content: MISSING_CONFIG_MESSAGE,
-          },
-        ]);
-        return;
-      }
-
       setIsSending(true);
 
       try {
-        if (!chatRef.current) {
-          chatRef.current = createReflectionChatSession({
-            question,
-            hasTodayResponse,
-            otherSideExcerpt: steelmanContext.current,
-          });
-        }
-
-        const result = await chatRef.current.sendMessage({ message: trimmed });
-        const reply = result.text?.trim();
+        const reply = await sendInkMessage(
+          { question, hasTodayResponse, otherSideExcerpt: steelmanContext.current },
+          history
+        );
 
         setMessages((current) => [
           ...current,
@@ -126,10 +119,15 @@ export default function InkPanel({
           {
             id: `${Date.now()}-assistant-error`,
             role: "assistant",
-            content: "Ink could not reach the model just now. Try again in a moment.",
+            content:
+              error instanceof InkUnavailableError
+                ? UNAVAILABLE_MESSAGE
+                : error instanceof InkBusyError
+                  ? "Lots of people are talking to Ink right now. Try again in a minute."
+                  : "Ink could not reach the model just now. Try again in a moment.",
+            local: true,
           },
         ]);
-        chatRef.current = null;
       } finally {
         setIsSending(false);
       }
@@ -141,7 +139,6 @@ export default function InkPanel({
     if (!steelmanRequest) return;
 
     steelmanContext.current = steelmanRequest.excerpt;
-    chatRef.current = null;
     setIsOpen(true);
     void send(
       `Make the strongest possible case for this reflection from someone who disagreed with me: "${steelmanRequest.excerpt}"`
@@ -235,10 +232,6 @@ export default function InkPanel({
                 </button>
               ))}
             </div>
-          )}
-
-          {!hasGeminiConfig && (
-            <p className="mb-3 text-[12px] leading-5 text-foreground/70">{MISSING_CONFIG_MESSAGE}</p>
           )}
 
           <div className="flex items-end gap-2">

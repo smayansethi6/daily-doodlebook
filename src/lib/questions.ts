@@ -145,23 +145,32 @@ export interface SubmitResponseInput {
   moderationReason?: string;
 }
 
+// Visitors may insert into responses but not read it back, and Postgres applies
+// SELECT policies to INSERT ... RETURNING, so an .insert().select() would be
+// rejected. The id is generated here instead and the record built locally.
 export async function submitResponse(input: SubmitResponseInput): Promise<ResponseRecord> {
-  const { data, error } = await supabase
-    .from("responses")
-    .insert({
-      question_id: input.questionId,
-      category: input.category,
-      response: input.response,
-      stance: input.stance,
-      share_consent: input.shareConsent,
-      moderation_status: input.moderationStatus,
-      moderation_reason: input.moderationReason ?? null,
-    })
-    .select("id, question_id, category, response, stance, created_at")
-    .single();
+  const record: ResponseRecord = {
+    id: crypto.randomUUID(),
+    question_id: input.questionId,
+    category: input.category,
+    response: input.response,
+    stance: input.stance,
+    created_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase.from("responses").insert({
+    id: record.id,
+    question_id: record.question_id,
+    category: record.category,
+    response: record.response,
+    stance: record.stance,
+    share_consent: input.shareConsent,
+    moderation_status: input.moderationStatus,
+    moderation_reason: input.moderationReason ?? null,
+  });
 
   if (error) throw error;
-  return data as ResponseRecord;
+  return record;
 }
 
 export interface StanceCounts {

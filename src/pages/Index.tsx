@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import AnswerComposer from "@/components/AnswerComposer";
 import InkPanel, { type SteelmanRequest } from "@/components/InkPanel";
 import PostAnswerState from "@/components/PostAnswerState";
@@ -11,7 +11,7 @@ import {
   RESPONSE_HISTORY_EVENT,
   type LocalResponseEntry,
 } from "@/lib/localResponses";
-import { getTodayDateKey } from "@/lib/time";
+import { useTodayKey } from "@/hooks/use-today";
 
 const QuestionSkeleton = () => (
   <div className="space-y-4" aria-hidden>
@@ -27,18 +27,24 @@ const Index = () => {
   const [todayEntry, setTodayEntry] = useState<LocalResponseEntry | undefined>();
   const [steelmanRequest, setSteelmanRequest] = useState<SteelmanRequest>();
 
+  const today = useTodayKey();
+
   const { data, isLoading, refetch, isFetching } = useQuery<DailyQuestion>({
-    queryKey: ["daily-question", getTodayDateKey()],
+    queryKey: ["daily-question", today],
     queryFn: fetchDailyQuestion,
     staleTime: 1000 * 60 * 5,
+    // At midnight keep the current question on screen until the new one
+    // arrives, rather than unmounting a half-written answer for a skeleton.
+    placeholderData: keepPreviousData,
   });
 
+  // Re-read on a new day too, so yesterday's entry stops counting as today's.
   useEffect(() => {
     const update = () => setTodayEntry(getTodayEntry());
     update();
     window.addEventListener(RESPONSE_HISTORY_EVENT, update);
     return () => window.removeEventListener(RESPONSE_HISTORY_EVENT, update);
-  }, []);
+  }, [today]);
 
   const handleSteelman = useCallback((excerpt: string) => {
     setSteelmanRequest({ excerpt, nonce: Date.now() });

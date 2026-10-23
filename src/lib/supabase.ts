@@ -9,9 +9,4 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-// The team's session must survive a reload: once row-level security limits the
-// responses table to authenticated readers, an in-memory-only token would leave
-// a refreshed /admin with an empty dashboard and no moderation queue.
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: { persistSession: true, autoRefreshToken: true },
-});
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
