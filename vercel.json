@@ -4,5 +4,6 @@
             "source": "/((?!api/).*)",
             "destination": "/index.html"
         }
-    ]
+    ],
+    "crons": [{ "path": "/api/send-daily-question", "schedule": "0 4 * * *" }]
 }

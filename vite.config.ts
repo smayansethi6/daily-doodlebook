@@ -51,6 +51,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   process.env.GEMINI_API_KEY ??= env.GEMINI_API_KEY;
   process.env.GEMINI_MODEL ??= env.GEMINI_MODEL;
+  for (const name of ["VITE_SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "RESEND_API_KEY", "EMAIL_FROM", "SITE_URL", "CRON_SECRET"] as const) {
+    process.env[name] ??= env[name];
+  }
 
   return {
     server: {

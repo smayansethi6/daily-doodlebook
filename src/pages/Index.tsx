@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import AnswerComposer from "@/components/AnswerComposer";
+import EmailSubscribe from "@/components/EmailSubscribe";
 import InkPanel, { type SteelmanRequest } from "@/components/InkPanel";
 import PostAnswerState from "@/components/PostAnswerState";
 import SiteFooter from "@/components/SiteFooter";
@@ -112,6 +113,7 @@ const Index = () => {
                 )}
               </>
             )}
+            {import.meta.env.VITE_EMAIL_SUBSCRIPTIONS_ENABLED === "true" && <EmailSubscribe />}
           </div>
 
           <InkPanel

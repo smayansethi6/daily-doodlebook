@@ -31,6 +31,13 @@ Migrations live in `src/migrations`. Run them in filename order in the Supabase 
 - A row in `question_schedules` (`question_id`, `scheduled_date`) overrides the rotation for that day. New questions you add without a `rotation_position` only appear on dates scheduled for them; to add one to the end of the rotation, give it the next `rotation_position` (366, 367, …).
 - The page calls `get_daily_question(target_date)` with today's Dubai date, and a tab left open moves to the new question at midnight. If Supabase is unreachable it shows the last question saved on the device, or a bundled standby one.
 
+## Daily question emails
+
+1. Run `src/migrations/20261027_email_subscribers.sql` in the Supabase SQL editor. The mailing list and delivery log have row-level security enabled and no public access.
+2. Verify a sending domain with Resend and create an API key. Set these **server-only** environment variables in Vercel: `SUPABASE_SECRET_KEY` (from Supabase → Settings → API Keys; the older `SUPABASE_SERVICE_ROLE_KEY` also works), `RESEND_API_KEY`, `EMAIL_FROM` (for example `ThinkPhil <questions@yourdomain.com>`), `SITE_URL` (for example `https://thinkphil.com`), and a random `CRON_SECRET` of at least 16 characters. Keep the existing `VITE_SUPABASE_URL`. Never give a Supabase secret key a `VITE_` prefix.
+3. Set `VITE_EMAIL_SUBSCRIPTIONS_ENABLED=true` in Vercel and deploy to production. The signup form sends a confirmation email; clicking its link and confirming activates the subscription. Subscribers receive the current Dubai day's question at approximately 08:00 GST via the Vercel cron job, with a link to answer on the site and an unsubscribe link. Vercel Hobby may run the job later in that hour.
+4. Confirm with one test address, check the `email_subscribers` row becomes `active`, and check Vercel's Cron Jobs logs after the first run. The current sender supports up to 100 active subscribers per run; add a queue or batch delivery before exceeding that count.
+
 ## Managing content
 
 There is no admin panel. Use the Supabase dashboard:
