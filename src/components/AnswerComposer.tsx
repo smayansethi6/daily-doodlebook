@@ -9,7 +9,7 @@ import {
 } from "@/lib/questions";
 import { clearDraft, loadDraft, persistLocalResponse, saveDraft } from "@/lib/localResponses";
 import { screenReflection } from "@/lib/moderation";
-import { stanceEnabled, type StanceValue } from "@/lib/stance";
+import { STANCE_VALUES, stanceEnabled, type StanceValue } from "@/lib/stance";
 
 const MAX_LENGTH = 2000;
 const DRAFT_DEBOUNCE_MS = 600;
@@ -21,7 +21,12 @@ interface AnswerComposerProps {
 
 export default function AnswerComposer({ question, onSubmitted }: AnswerComposerProps) {
   const [answer, setAnswer] = useState(() => loadDraft());
-  const [stance, setStance] = useState<StanceValue | null>(null);
+  // The daily email links here with ?stance=N for the option the reader tapped.
+  const [stanceFromLink] = useState(() => {
+    const value = Number(new URLSearchParams(window.location.search).get("stance") ?? NaN);
+    return (STANCE_VALUES as readonly number[]).includes(value) ? (value as StanceValue) : null;
+  });
+  const [stance, setStance] = useState<StanceValue | null>(stanceFromLink);
   const [shareConsent, setShareConsent] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -103,6 +108,7 @@ export default function AnswerComposer({ question, onSubmitted }: AnswerComposer
           value={answer}
           onChange={(event) => setAnswer(event.target.value)}
           maxLength={MAX_LENGTH}
+          autoFocus={stanceFromLink !== null}
         />
       </div>
 

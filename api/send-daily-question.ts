@@ -1,4 +1,5 @@
-import { dubaiDate, emailConfig, emailDb, escapeHtml, sendEmail } from "./_lib/email.js";
+import { dailyEmail, type EmailQuestion } from "./_lib/daily-email.js";
+import { dubaiDate, emailConfig, emailDb, sendEmail } from "./_lib/email.js";
 
 export const config = { maxDuration: 60 };
 
@@ -11,8 +12,8 @@ export async function GET(request: Request): Promise<Response> {
     const date = dubaiDate();
     const { data: questions, error: questionError } = await db.rpc("get_daily_question", { target_date: date });
     if (questionError) throw questionError;
-    const question = questions?.[0]?.question as string | undefined;
-    if (!question) throw new Error(`No daily question for ${date}`);
+    const question = questions?.[0] as EmailQuestion | undefined;
+    if (!question?.question) throw new Error(`No daily question for ${date}`);
 
     // Fetch at most 101 so an unexpectedly large list fails visibly before sending.
     const { data: subscribers, error: subscriberError } = await db.from("email_subscribers")
@@ -31,10 +32,9 @@ export async function GET(request: Request): Promise<Response> {
       if (prior) continue;
 
       const unsubscribeUrl = `${siteUrl}/api/email-unsubscribe?token=${subscriber.unsubscribe_token}`;
-      const html = `<p>Today's ThinkPhil question:</p><h1>${escapeHtml(question)}</h1><p><a href="${escapeHtml(answerUrl)}">Share your answer</a></p><p style="font-size:12px"><a href="${escapeHtml(unsubscribeUrl)}">Unsubscribe</a></p>`;
-      const text = `Today's ThinkPhil question:\n\n${question}\n\nAnswer on the website: ${answerUrl}\n\nUnsubscribe: ${unsubscribeUrl}`;
+      const { subject, html, text } = dailyEmail({ question, date, answerUrl, unsubscribeUrl });
       try {
-        await sendEmail({ to: subscriber.email, subject: "Today's ThinkPhil question", html, text, idempotencyKey: `daily-${date}-${subscriber.id}` });
+        await sendEmail({ to: subscriber.email, subject, html, text, idempotencyKey: `daily-${date}-${subscriber.id}` });
         const { error: deliveryError } = await db.from("daily_email_deliveries").insert({ subscriber_id: subscriber.id, question_date: date });
         if (deliveryError && deliveryError.code !== "23505") throw deliveryError;
         sent += 1;
